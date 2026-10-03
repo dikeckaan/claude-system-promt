@@ -35,3 +35,7 @@ An edited section is sent from the next request after you save its file, and sta
 claude plugin validate plugins/system-promt
 claude plugin test plugins/system-promt
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
