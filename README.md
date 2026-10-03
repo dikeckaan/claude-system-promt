@@ -22,12 +22,15 @@ It is written with Claude Code's function hooks, an early-access API: it needs a
 | `/system-promt export [path]` | Writes everything the model is given to a markdown file (`system-prompt.md` in the working directory by default) |
 | `/system-promt edit <section>` | Copies the section to `~/.claude/system-promt/<section>.md` and opens it in your text editor |
 | `/system-promt reset <section\|all>` | Restores the original text |
+| `/system-promt allow everything` | Empties every instruction section except the protected ones; `reset all` restores them |
 
 The export has four parts: the system prompt's sections, the first message's context blocks (CLAUDE.md, date, account), the messages the engine injects (skill listings, reminders), and each tool's name and description. The second and third are captured as they pass, so send one message after installing before you export. Tool parameter schemas are not included.
 
 An edited section is sent from the next request after you save its file, and stays edited across sessions until you reset it. An empty file drops the section. Changing a section invalidates the prompt cache for the next request.
 
 **An export contains your own instructions, memory and account email. Read it before you share it.**
+
+`allow everything` leaves the security policy, the caution before irreversible actions and the factual sections (environment, memory, model identity) in place. It changes Claude Code's instructions only: the model's own judgment and the permission system are unchanged. Any section, protected or not, can still be edited by name.
 
 ## Develop
 

@@ -12,6 +12,19 @@ const NAME = 'system-promt'
 const PANE = 'system-promt'
 const OVERRIDES = 'overrides'
 const BACKUPS = 'backups'
+// Sections "allow everything" never empties: the security policy and the
+// caution before irreversible actions, and the ones that state facts (the
+// machine, the memory folder, the model). Each is still editable by name.
+const PROTECTED = [
+  'lean_body',
+  'intro',
+  'system',
+  'actions',
+  'action_caution',
+  'env_info_simple',
+  'memory',
+  'fable_identity',
+]
 const SHOWN_CHARS = 20000
 const USAGE =
   'Usage: /system-promt [list | export [path] | edit <section> | reset <section|all> | allow everything]'
@@ -58,8 +71,11 @@ const backupsOf = async ($: EngineInterface): Promise<Backups> => {
 
 const saveBackup = async ($: EngineInterface, id: string, content: string): Promise<void> => {
   const backups = await backupsOf($)
-  backups[id] = content
-  await $.store.set(BACKUPS, backups)
+
+  // The first, unedited text alone: a later edit never replaces it.
+  if (!(id in backups)) {
+    await $.store.set(BACKUPS, { ...backups, [id]: content })
+  }
 }
 
 const folder = async ($: EngineInterface): Promise<string> => {
@@ -185,10 +201,8 @@ const edit = async ($: EngineInterface, id: string): Promise<string> => {
   const overrides = await overridesOf($)
   let path = overrides[id]
 
-  // Save original to backup before editing
-  await saveBackup($, id, row.text)
-
   if (path === undefined || !row.isEdited) {
+    await saveBackup($, id, row.text)
     path = `${await folder($)}/${id.replace(/[^\w.-]/g, '_')}.md`
     await $.fs.write(path, row.text)
     await $.store.set(OVERRIDES, { ...overrides, [id]: path })
@@ -204,24 +218,28 @@ const edit = async ($: EngineInterface, id: string): Promise<string> => {
 const reset = async ($: EngineInterface, id: string): Promise<string> => {
   const overrides = await overridesOf($)
   const backups = await backupsOf($)
-  
+
   const ids = id === 'all' ? Object.keys(overrides) : [id]
   const kept = Object.fromEntries(
     Object.entries(overrides).filter(([one]) => !ids.includes(one)),
   )
-  
+
   // Restore backups to original files
   for (const sectionId of ids) {
     const backup = backups[sectionId]
     const path = overrides[sectionId]
-    
+
     if (backup && path) {
       await $.fs.write(path, backup)
     }
   }
-  
+
   const count = Object.keys(overrides).length - Object.keys(kept).length
   await $.store.set(OVERRIDES, kept)
+  await $.store.set(
+    BACKUPS,
+    Object.fromEntries(Object.entries(backups).filter(([one]) => !ids.includes(one))),
+  )
   await update($, revision, n => n + 1)
 
   return count === 0
@@ -232,23 +250,35 @@ const reset = async ($: EngineInterface, id: string): Promise<string> => {
 const allowEverything = async ($: EngineInterface): Promise<string> => {
   const list = await rows($)
   const overrides = await overridesOf($)
-  
-  // Backup all sections first before removing them
+  const dir = await folder($)
+  const removed: string[] = []
+
   for (const section of list) {
-    await saveBackup($, section.id, section.text)
-  }
-  
-  // Create override files with empty content for all sections, effectively removing them
-  for (const section of list) {
-    const path = `${await folder($)}/${section.id.replace(/[^\w.-]/g, '_')}.md`
+    if (PROTECTED.includes(section.id)) {
+      continue
+    }
+
+    if (!section.isEdited) {
+      await saveBackup($, section.id, section.text)
+    }
+
+    // An empty file drops the section from the prompt.
+    const path = `${dir}/${section.id.replace(/[^\w.-]/g, '_')}.md`
     await $.fs.write(path, '')
     overrides[section.id] = path
+    removed.push(section.id)
   }
-  
+
   await $.store.set(OVERRIDES, overrides)
   await update($, revision, n => n + 1)
+  const kept = list.filter(one => PROTECTED.includes(one.id)).map(one => one.id)
 
-  return `⚠️  ALL SYSTEM PROMPT RESTRICTIONS REMOVED - All sections have been emptied and backed up. The model no longer has ethical guidelines, legal constraints, technical limitations, or safety measures. Use /system-promt reset all to restore from backup.`
+  return [
+    `Removed ${removed.length} instruction sections from the system prompt: ${removed.join(', ') || 'none'}.`,
+    `Kept: ${kept.join(', ') || 'none'} (security policy, caution before irreversible actions, and facts about the session).`,
+    "This changes Claude Code's instructions only: the model's own judgment and the permission system are unchanged.",
+    '/system-promt reset all restores every section.',
+  ].join('\n')
 }
 
 export const register: Register = on => {

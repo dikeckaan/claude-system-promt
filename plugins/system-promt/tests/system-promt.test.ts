@@ -91,6 +91,15 @@ test('exports, edits through a file, and resets', async ($, on) => {
 
   await $.command.run(run('reset tone'))
   expect((await $.prompt.compose(COMPOSE)).sections).toEqual(SECTIONS)
+
+  const opened = await $.command.run(run('allow everything'))
+  expect(opened.text).toContain('Removed 1 instruction sections from the system prompt: tone.')
+  expect((await $.prompt.compose(COMPOSE)).sections.map(one => one.id)).toEqual(['intro', 'memory'])
+  // A second run leaves the backup of the original text alone.
+  await $.command.run(run('allow everything'))
+  await $.command.run(run('reset all'))
+  expect((await $.prompt.compose(COMPOSE)).sections).toEqual(SECTIONS)
+  expect(disk.get(path)).toBe('Be brief.')
 })
 
 for (const surface of ['terminal', 'desktop'] as const) {
