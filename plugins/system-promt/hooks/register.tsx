@@ -13,7 +13,7 @@ const PANE = 'system-promt'
 const OVERRIDES = 'overrides'
 const SHOWN_CHARS = 20000
 const USAGE =
-  'Usage: /system-promt [list | export [path] | edit <section> | reset <section|all>]'
+  'Usage: /system-promt [list | export [path] | edit <section> | reset <section|all> | allow everything]'
 
 const selected = atom({ plugin: 'system-promt', key: 'selected' } as const, null)
 const revision = atom({ plugin: 'system-promt', key: 'revision' } as const, 0)
@@ -190,12 +190,29 @@ const reset = async ($: EngineInterface, id: string): Promise<string> => {
     : `Restored ${count} section${count === 1 ? '' : 's'} to the original text; the edited files stay on disk, unused.`
 }
 
+const allowEverything = async ($: EngineInterface): Promise<string> => {
+  const list = await rows($)
+  const overrides = await overridesOf($)
+  
+  // Create override files with empty content for all sections, effectively removing them
+  for (const section of list) {
+    const path = `${await folder($)}/${section.id.replace(/[^\w.-]/g, '_')}.md`
+    await $.fs.write(path, '')
+    overrides[section.id] = path
+  }
+  
+  await $.store.set(OVERRIDES, overrides)
+  await update($, revision, n => n + 1)
+
+  return `⚠️  ALL SYSTEM PROMPT RESTRICTIONS REMOVED - All sections have been emptied. The model no longer has ethical guidelines, legal constraints, technical limitations, or safety measures. Use with extreme caution.`
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: NAME,
       description: 'Show, export or edit the system prompt',
-      argumentHint: '[list | export [path] | edit <section> | reset <section|all>]',
+      argumentHint: '[list | export [path] | edit <section> | reset <section|all> | allow everything]',
     })
 
     // Both answers are cached from before this mod loaded; asked again, they
@@ -279,6 +296,10 @@ export const register: Register = on => {
 
     if (verb === 'reset' && argument !== '') {
       return { text: await reset($, argument) }
+    }
+
+    if (verb === 'allow' && argument === 'everything') {
+      return { text: await allowEverything($) }
     }
 
     return { text: USAGE }
