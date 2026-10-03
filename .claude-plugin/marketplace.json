@@ -1,0 +1,12 @@
+{
+  "name": "system-promt",
+  "owner": { "name": "dikeckaan" },
+  "description": "A Claude Code mod that shows, exports and edits the system prompt",
+  "plugins": [
+    {
+      "name": "system-promt",
+      "source": "./plugins/system-promt",
+      "description": "Show, export and edit the Claude Code system prompt with /system-promt"
+    }
+  ]
+}

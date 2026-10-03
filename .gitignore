@@ -1,0 +1,5 @@
+# The engine writes these beside a loaded mod
+plugins/*/.claude-plugin/types/
+plugins/*/tsconfig.json
+# Exports hold your own prompt, memory and account details
+system-prompt.md

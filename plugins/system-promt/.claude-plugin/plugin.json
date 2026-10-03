@@ -1,0 +1,6 @@
+{
+  "name": "system-promt",
+  "version": "0.1.0",
+  "description": "Shows the system prompt section by section in a pane, exports it to a file, and lets each section be edited through a file; /system-promt",
+  "types": "./types/index.d.ts"
+}
