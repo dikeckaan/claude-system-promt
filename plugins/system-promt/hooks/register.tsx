@@ -11,6 +11,7 @@ import type {
 const NAME = 'system-promt'
 const PANE = 'system-promt'
 const OVERRIDES = 'overrides'
+const BACKUPS = 'backups'
 const SHOWN_CHARS = 20000
 const USAGE =
   'Usage: /system-promt [list | export [path] | edit <section> | reset <section|all> | allow everything]'
@@ -19,6 +20,7 @@ const selected = atom({ plugin: 'system-promt', key: 'selected' } as const, null
 const revision = atom({ plugin: 'system-promt', key: 'revision' } as const, 0)
 
 type Overrides = Record<string, string>
+type Backups = Record<string, string>
 type Row = PromptComposeSection & { isEdited: boolean }
 
 const compact = (n: number): string =>
@@ -37,6 +39,27 @@ const overridesOf = async ($: EngineInterface): Promise<Overrides> => {
   }
 
   return map
+}
+
+const backupsOf = async ($: EngineInterface): Promise<Backups> => {
+  const stored = await $.store.get(BACKUPS)
+  const map: Backups = {}
+
+  if (stored !== null && typeof stored === 'object') {
+    for (const [id, content] of Object.entries(stored)) {
+      if (typeof content === 'string') {
+        map[id] = content
+      }
+    }
+  }
+
+  return map
+}
+
+const saveBackup = async ($: EngineInterface, id: string, content: string): Promise<void> => {
+  const backups = await backupsOf($)
+  backups[id] = content
+  await $.store.set(BACKUPS, backups)
 }
 
 const folder = async ($: EngineInterface): Promise<string> => {
@@ -162,6 +185,9 @@ const edit = async ($: EngineInterface, id: string): Promise<string> => {
   const overrides = await overridesOf($)
   let path = overrides[id]
 
+  // Save original to backup before editing
+  await saveBackup($, id, row.text)
+
   if (path === undefined || !row.isEdited) {
     path = `${await folder($)}/${id.replace(/[^\w.-]/g, '_')}.md`
     await $.fs.write(path, row.text)
@@ -177,22 +203,40 @@ const edit = async ($: EngineInterface, id: string): Promise<string> => {
 
 const reset = async ($: EngineInterface, id: string): Promise<string> => {
   const overrides = await overridesOf($)
+  const backups = await backupsOf($)
+  
   const ids = id === 'all' ? Object.keys(overrides) : [id]
   const kept = Object.fromEntries(
     Object.entries(overrides).filter(([one]) => !ids.includes(one)),
   )
+  
+  // Restore backups to original files
+  for (const sectionId of ids) {
+    const backup = backups[sectionId]
+    const path = overrides[sectionId]
+    
+    if (backup && path) {
+      await $.fs.write(path, backup)
+    }
+  }
+  
   const count = Object.keys(overrides).length - Object.keys(kept).length
   await $.store.set(OVERRIDES, kept)
   await update($, revision, n => n + 1)
 
   return count === 0
     ? `Nothing to reset for "${id}".`
-    : `Restored ${count} section${count === 1 ? '' : 's'} to the original text; the edited files stay on disk, unused.`
+    : `Restored ${count} section${count === 1 ? '' : 's'} to the original text from backups; the edited files have been updated.`
 }
 
 const allowEverything = async ($: EngineInterface): Promise<string> => {
   const list = await rows($)
   const overrides = await overridesOf($)
+  
+  // Backup all sections first before removing them
+  for (const section of list) {
+    await saveBackup($, section.id, section.text)
+  }
   
   // Create override files with empty content for all sections, effectively removing them
   for (const section of list) {
@@ -204,7 +248,7 @@ const allowEverything = async ($: EngineInterface): Promise<string> => {
   await $.store.set(OVERRIDES, overrides)
   await update($, revision, n => n + 1)
 
-  return `⚠️  ALL SYSTEM PROMPT RESTRICTIONS REMOVED - All sections have been emptied. The model no longer has ethical guidelines, legal constraints, technical limitations, or safety measures. Use with extreme caution.`
+  return `⚠️  ALL SYSTEM PROMPT RESTRICTIONS REMOVED - All sections have been emptied and backed up. The model no longer has ethical guidelines, legal constraints, technical limitations, or safety measures. Use /system-promt reset all to restore from backup.`
 }
 
 export const register: Register = on => {
